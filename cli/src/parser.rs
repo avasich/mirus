@@ -1,13 +1,12 @@
-use std::time::Duration;
+use std::{path::PathBuf, time::Duration};
 
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
-use url::Url;
-
-use crate::{
+use mirus::{
     measure::ConnectionConfig,
     mirror::Mirrorlist,
     pipeline::{FilterCriteria, Pipeline, SortDir},
 };
+use url::Url;
 
 
 #[allow(clippy::struct_excessive_bools)]
@@ -20,10 +19,6 @@ pub struct Cli {
     /// total timeout in ms
     #[arg(long, default_value_t = 5000)]
     timeout: u64,
-
-    /// what to do on download timeout
-    #[arg(long, value_enum, default_value_t = TimeoutAction::Keep)]
-    timeout_action: TimeoutAction,
 
     /// mirrorlist url
     #[arg(long, default_value = Mirrorlist::URL)]
@@ -71,14 +66,15 @@ pub struct Cli {
 
     /// output file path
     #[arg(long)]
-    save: Option<String>,
+    save: Option<PathBuf>,
 
     /// ttl of the local mirrorlist cache, in seconds
     #[arg(long, default_value_t = 300)]
     cache_ttl: u64,
 }
 
-pub fn parse() -> Result<(Config, Pipeline), crate::Error> {
+
+pub fn parse() -> Result<(Config, Pipeline), crate::error::Error> {
     #[derive(Clone, Copy)]
     enum PipelineOps {
         SortAsc,
@@ -107,13 +103,12 @@ pub fn parse() -> Result<(Config, Pipeline), crate::Error> {
         connection_timeout: Duration::from_millis(cli.connection_timeout),
         timeout: Duration::from_millis(cli.timeout),
         max_concurrent_measurements: cli.max_concurrent,
-        keep_timeouted: cli.timeout_action == TimeoutAction::Keep,
     };
 
     let pipeline = {
         // first, we filter out all the mirrors we can...
         let filter_protocol = (!cli.protocol.is_empty()).then(|| {
-            let allowed: Vec<_> = cli.protocol.into_iter().map(crate::mirror::Protocol::from).collect();
+            let allowed: Vec<_> = cli.protocol.into_iter().map(mirus::mirror::Protocol::from).collect();
             FilterCriteria::protocol(allowed)
         });
         let filter_country = (!cli.country.is_empty()).then(|| FilterCriteria::country(cli.country));
@@ -123,7 +118,7 @@ pub fn parse() -> Result<(Config, Pipeline), crate::Error> {
     };
 
     let pipeline = {
-        use crate::pipeline::SortKey;
+        use mirus::pipeline::SortKey;
         // ...and then apply the rest of the pipeline in the correct order
         let (mut sa, mut sd, mut t) = (0, 0, 0);
         ops.into_iter().fold(pipeline, |pipeline, (_, key)| match key {
@@ -146,30 +141,38 @@ pub fn parse() -> Result<(Config, Pipeline), crate::Error> {
         })
     };
 
+    let cache_file = std::env::var("XDG_CACHE_HOME")
+        .ok()
+        .map(PathBuf::from)
+        .or_else(|| std::env::home_dir().map(|home| home.join(".cache")))
+        .map(|cache_dir| cache_dir.join("mirus.json"));
+
+    let save_file = cli.save.and_then(|path| {
+        if path.is_absolute() {
+            Some(path)
+        } else {
+            std::env::current_dir().ok().map(|dir| dir.join(path))?.normalize_lexically().ok()
+        }
+    });
+
     let config = Config {
-        save_file: cli.save,
+        save_file,
         verbose: cli.verbose,
         mirrorlist_url: cli.url,
         cache_ttl: Duration::from_secs(cli.cache_ttl),
+        cache_file,
     };
 
     Ok((config, pipeline))
 }
 
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-enum TimeoutAction {
-    /// measure what's downloaded
-    Keep,
-    /// discard the mirror
-    Discard,
-}
-
 #[derive(Subcommand)]
 enum Commands {
     ListCountries,
     Measure,
 }
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum SortKey {
@@ -186,7 +189,8 @@ pub enum SortKey {
     Url,
 }
 
-impl From<SortKey> for crate::pipeline::SortKey {
+
+impl From<SortKey> for mirus::pipeline::SortKey {
     fn from(value: SortKey) -> Self {
         match value {
             SortKey::CompPct => Self::CompPct,
@@ -204,6 +208,7 @@ impl From<SortKey> for crate::pipeline::SortKey {
     }
 }
 
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum Protocol {
     Http,
@@ -211,7 +216,8 @@ pub enum Protocol {
     Rsync,
 }
 
-impl From<Protocol> for crate::mirror::Protocol {
+
+impl From<Protocol> for mirus::mirror::Protocol {
     fn from(value: Protocol) -> Self {
         match value {
             Protocol::Http => Self::Http,
@@ -221,10 +227,12 @@ impl From<Protocol> for crate::mirror::Protocol {
     }
 }
 
+
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub save_file: Option<String>,
+    pub save_file: Option<PathBuf>,
     pub verbose: bool,
     pub mirrorlist_url: Url,
     pub cache_ttl: Duration,
+    pub cache_file: Option<PathBuf>,
 }

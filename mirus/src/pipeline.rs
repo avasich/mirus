@@ -1,8 +1,7 @@
 use chrono::{DateTime, Utc};
 
 use crate::{
-    event::Callback,
-    measure::{ConnectionConfig, Measure},
+    measure::{Callback, ConnectionConfig, Measure},
     mirror::{Mirror, Protocol},
 };
 

@@ -2,7 +2,6 @@ use reqwest::StatusCode;
 
 #[derive(Debug)]
 pub enum Error {
-    Cli(clap::Error),
     InvalidMirror(String),
     Io(std::io::Error),
     Network(NetworkError),
@@ -12,7 +11,6 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Cli(e) => write!(f, "CLI error: {e}"),
             Self::InvalidMirror(msg) => write!(f, "invalid mirror: {msg}"),
             Self::Io(e) => write!(f, "IO error: {e}"),
             Self::Network(e) => write!(f, "network error: {e:?}"),
@@ -77,11 +75,6 @@ impl From<reqwest::Error> for Error {
     }
 }
 
-impl From<clap::Error> for Error {
-    fn from(error: clap::Error) -> Self {
-        Self::Cli(error)
-    }
-}
 
 impl From<std::io::Error> for Error {
     fn from(error: std::io::Error) -> Self {

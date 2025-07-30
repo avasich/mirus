@@ -6,8 +6,8 @@ use std::{
 use futures::stream::StreamExt;
 
 use crate::{
-    event::{Callback, Event, MeasureEvent},
-    mirror::{Mirror, Protocol, Rate},
+    error::NetworkError,
+    mirror::{Mirror, MirrorId, Protocol, Rate},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -15,7 +15,6 @@ pub struct ConnectionConfig {
     pub connection_timeout: Duration,
     pub timeout: Duration,
     pub max_concurrent_measurements: usize,
-    pub keep_timeouted: bool,
 }
 
 impl Default for ConnectionConfig {
@@ -24,24 +23,17 @@ impl Default for ConnectionConfig {
             connection_timeout: Duration::from_secs(2),
             timeout: Duration::from_secs(5),
             max_concurrent_measurements: 12,
-            keep_timeouted: true,
         }
     }
 }
 
 impl ConnectionConfig {
     #[must_use]
-    pub const fn new(
-        connection_timeout: Duration,
-        timeout: Duration,
-        max_concurrent_measurements: usize,
-        keep_timeouted: bool,
-    ) -> Self {
+    pub const fn new(connection_timeout: Duration, timeout: Duration, max_concurrent_measurements: usize) -> Self {
         Self {
             connection_timeout,
             timeout,
             max_concurrent_measurements,
-            keep_timeouted,
         }
     }
 
@@ -60,12 +52,6 @@ impl ConnectionConfig {
     #[must_use]
     pub const fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
-        self
-    }
-
-    #[must_use]
-    pub const fn keep_timeouted(mut self, keep: bool) -> Self {
-        self.keep_timeouted = keep;
         self
     }
 }
@@ -122,7 +108,7 @@ impl Measure {
                     rate.download_time = download_start.elapsed();
                     progress(MeasureEvent::BytesReceived { rate });
                 },
-                Err(e) if e.is_timeout() && self.config.keep_timeouted => break,
+                Err(e) if e.is_timeout() => break,
                 Err(e) => return Err(e.into()),
             }
         }
@@ -179,9 +165,23 @@ impl Measure {
     {
         futures::stream::iter(mirrors.into_iter().map(move |m| (m.borrow(), notify.clone())))
             .for_each_concurrent(Some(self.config.max_concurrent_measurements), async move |(mirror, mut cb)| {
-                let rate = self.single(mirror, move |event| cb(Event::Measure { id: mirror.id, event })).await;
+                let rate = self.single(mirror, move |event| cb(mirror.id, event)).await;
                 let _ = mirror.rate.set(rate.ok());
             })
             .await;
     }
+}
+
+
+pub trait Callback: FnMut(MirrorId, MeasureEvent) + Send + Clone {}
+impl<F> Callback for F where F: FnMut(MirrorId, MeasureEvent) + Send + Clone {}
+
+
+#[derive(Debug, Clone)]
+pub enum MeasureEvent {
+    Connecting,
+    Connected { connection_time: Duration, file_size: Option<u64> },
+    BytesReceived { rate: Rate },
+    Finished { rate: Rate },
+    Failed(NetworkError),
 }

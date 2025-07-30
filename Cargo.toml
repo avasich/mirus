@@ -1,22 +1,13 @@
-[package]
-name = "mirus"
-version = "0.1.0"
-edition = "2024"
-description = "a reflector (arch linux mirror ranking tool) rewrite, probably? we'll see how it goes"
+[workspace]
+resolver = "3"
+members = ["cli", "mirus"]
 
-[dependencies]
-chrono = { version = "0.4.41", features = ["serde"] }
-clap = { version = "4.5.41", features = ["derive"] }
-console = "0.16.0"
+[workspace.dependencies]
 futures = "0.3.31"
-indicatif = "0.18.0"
-reqwest = { version = "0.12.22", features = ["json", "stream"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
 tokio = { version = "1.46", features = ["macros", "rt-multi-thread"] }
 url = { version = "2.5.4", features = ["serde"] }
 
-[lints.clippy]
+[workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
 missing-errors-doc = "allow"

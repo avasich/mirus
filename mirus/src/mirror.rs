@@ -1,4 +1,5 @@
 use std::{
+    borrow::Borrow,
     fs::File,
     io::{BufReader, BufWriter},
     path::Path,
@@ -15,7 +16,7 @@ use serde::{
 };
 use url::Url;
 
-use crate::{event::Callback, pipeline::Pipeline};
+use crate::{measure::Callback, pipeline::Pipeline};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -27,6 +28,7 @@ pub enum Protocol {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Mirrorlist {
+    pub url: Option<Url>,
     pub check_frequency: u32,
     pub cutoff: u32,
     pub last_check: DateTime<Utc>,
@@ -40,10 +42,12 @@ impl Mirrorlist {
     pub const URL: &str = "https://archlinux.org/mirrors/status/json/";
 
     pub async fn fetch(url: Url) -> Result<Self, crate::Error> {
-        Ok(reqwest::get(url).await?.error_for_status()?.json().await?)
+        let mut mirrorlist = reqwest::get(url.clone()).await?.error_for_status()?.json::<Self>().await?;
+        mirrorlist.url = Some(url);
+        Ok(mirrorlist)
     }
 
-    pub fn from_file(path: &Path) -> Result<Self, crate::Error> {
+    pub fn from_file(path: impl AsRef<Path>) -> Result<Self, crate::Error> {
         let file = File::open(path)?;
         let reader = BufReader::new(file);
         let mirrorlist = serde_json::from_reader(reader)?;
@@ -51,7 +55,11 @@ impl Mirrorlist {
         Ok(mirrorlist)
     }
 
-    pub fn to_file(&self, path: &Path) -> Result<(), crate::Error> {
+    pub fn to_file(&self, path: impl AsRef<Path>) -> Result<(), crate::Error> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
         let file = File::create(path)?;
         let writer = BufWriter::new(file);
         serde_json::to_writer(writer, self)?;
@@ -67,6 +75,24 @@ impl Mirrorlist {
     pub fn get(&self, id: MirrorId) -> &Mirror {
         &self.mirrors[id.0]
     }
+
+    pub fn save_formatted<M>(path: impl AsRef<Path>, mirrors: impl IntoIterator<Item = M>) -> Result<(), crate::Error>
+    where
+        M: Borrow<Mirror>,
+    {
+        use std::io::Write;
+
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        let file = File::create(path)?;
+        let mut writer = BufWriter::new(file);
+        Ok(mirrors
+            .into_iter()
+            .map(|mirror| mirror.borrow().mirrorlist_entry())
+            .try_for_each(|entry| writeln!(&mut writer, "{entry}"))?)
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -77,6 +103,7 @@ pub struct MirrorId(usize);
 pub struct Mirror {
     #[serde(skip_deserializing)]
     pub id: MirrorId,
+    pub active: bool,
     // The number of mirror checks that have successfully connected and disconnected from the given URL.
     // If this is below 100%, the mirror may be unreliable.
     pub completion_pct: f64,
@@ -117,6 +144,10 @@ impl Mirror {
     #[must_use]
     pub fn db_url(&self) -> Url {
         self.url.join(Self::DB_SUBPATH).unwrap()
+    }
+
+    pub fn mirrorlist_entry(&self) -> String {
+        format!("Server = {}/$repo/os/$arch", self.url)
     }
 }
 
@@ -197,6 +228,7 @@ impl TryFrom<RawMirror> for Mirror {
         {
             Ok(Self {
                 id: MirrorId::default(),
+                active: true,
                 completion_pct,
                 country: raw.country,
                 country_code: raw.country_code,
