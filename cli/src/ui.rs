@@ -90,7 +90,6 @@ pub fn start_ui(mut rx: UnboundedReceiver<Event>) -> tokio::task::JoinHandle<()>
                 return;
             };
 
-            #[allow(clippy::match_same_arms)]
             match event {
                 Event::InitMirrorlist(event) => match event {
                     InitMirrorlistEvent::Success { mirrorlist } => break mirrorlist,
@@ -130,7 +129,6 @@ pub fn start_ui(mut rx: UnboundedReceiver<Event>) -> tokio::task::JoinHandle<()>
         let mut ui = ProgressUI::new(mirrorlist);
 
         while let Some(event) = rx.recv().await {
-            #[allow(clippy::match_same_arms)]
             match event {
                 Event::Measure { id, event } => ui.update(id, event),
                 Event::SaveMirrorlist(event) => match event {
