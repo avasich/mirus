@@ -147,7 +147,7 @@ impl Mirror {
     }
 
     pub fn mirrorlist_entry(&self) -> String {
-        format!("Server = {}/$repo/os/$arch", self.url)
+        format!("Server = {}$repo/os/$arch", self.url)
     }
 }
 
