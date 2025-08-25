@@ -5,11 +5,12 @@ edition = "2024"
 description = "arch linux mirror ranking cli tool inspired by reflector"
 
 [dependencies]
-clap = { version = "4.5.41", features = ["derive"] }
+clap = { version = "4.5.45", features = ["derive"] }
 console = "0.16.0"
 indicatif = "0.18.0"
 mirus = { path = "../mirus" }
 tokio = { workspace = true }
+tokio-stream = { workspace = true }
 url = { workspace = true }
 
 [lints]

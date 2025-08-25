@@ -1,12 +1,12 @@
 [workspace]
 resolver = "3"
 members = ["cli", "mirus"]
-description = "arch linux mirror ranking cli tool inspired by reflector"
 
 [workspace.dependencies]
 futures = "0.3.31"
-tokio = { version = "1.46", features = ["macros", "rt-multi-thread"] }
-url = { version = "2.5.4", features = ["serde"] }
+tokio = { version = "1.47", features = ["macros", "rt-multi-thread"] }
+tokio-stream = "0.1.17"
+url = { version = "2.5.7", features = ["serde"] }
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
